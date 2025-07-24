@@ -139,32 +139,29 @@ class Boundary:
         dist = v.length()
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
+        # Only if ball circle overlaps ring thickness
         if dist + ball.radius < inner or dist - ball.radius > outer:
             return False
+        # Ignore gap
         theta = angle_normalize(math.atan2(v.y, v.x))
-        if self.angle_in_gap(theta):
-            return False
-        normal = v / (dist or 1)
-        vel_norm = ball.vel.dot(normal)
-        if dist >= self.current_radius and vel_norm >= 0:  # ball outside moving away
-            return False
-        if dist < self.current_radius and vel_norm <= 0:   # ball inside moving inward
-            return False
-        return True
+        return not self.angle_in_gap(theta)
 
     def resolve_collision(self, ball: Ball):
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length() or 1.0
         normal = v / dist
         vel_norm = ball.vel.dot(normal)
+        # Reflect regardless of in/out, but only flip component along normal
         ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal
-        # reposition just outside the collision band
+
+        # Push ball just outside ring thickness with margin so it won’t re-clip next frame
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
+        margin = 1.0 + self.shrink_rate * 0.02  # small buffer
         if dist >= self.current_radius:
-            target = outer + ball.radius + 0.5
+            target = outer + ball.radius + margin
         else:
-            target = inner - ball.radius - 0.5
+            target = inner - ball.radius - margin
         ball.pos = pygame.Vector2(CENTER) + normal * target
 
 class Shard:
