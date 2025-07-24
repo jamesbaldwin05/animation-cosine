@@ -12,18 +12,18 @@ TITLE = "Ball Trying to Escape the Circles"
 
 GRAVITY = pygame.Vector2(0, 350)  # px/sec², downward
 LINEAR_FRICTION = 0.999           # per frame
-RESTITUTION = 0.92                # bounciness for collisions
+RESTITUTION = 0.95                # bounciness for collisions
 
 BALL_RADIUS = 12
 BALL_MASS = 1
 
 # Boundary parameters
-BOUNDARY_THICKNESS = 14           # px
-SHRINK_RATE = 45.0                # px/sec
+BOUNDARY_THICKNESS = 8            # px
+SHRINK_RATE = 60.0                # px/sec
 GAP_CLOSING_RATE = 0.35           # radians/sec
 MIN_GAP_SIZE = 0.17               # radians (~10°)
 GAP_ROTATION_RATE = 0.3           # radians/sec
-BOUNDARY_RADII = list(range(380, 40, -26))  # 13 rings, last ~54 px
+BOUNDARY_RADII = list(range(400, 20, -12))  # 32 rings, last ~32 px
 
 # Chaos kick
 CHAOS_GAP_THRESHOLD = 0.35        # radians (~20°)
