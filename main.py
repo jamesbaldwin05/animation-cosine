@@ -18,12 +18,12 @@ BALL_RADIUS = 12
 BALL_MASS = 1
 
 # Boundary parameters
-BOUNDARY_RADII = [320, 260, 200, 140]
-SHRINK_RATE = 8.0                 # px/sec
-GAP_CLOSING_RATE = 0.15           # radians/sec
+BOUNDARY_THICKNESS = 14           # px
+SHRINK_RATE = 45.0                # px/sec
+GAP_CLOSING_RATE = 0.35           # radians/sec
 MIN_GAP_SIZE = 0.17               # radians (~10°)
 GAP_ROTATION_RATE = 0.3           # radians/sec
-BOUNDARY_THICKNESS = 28           # px
+BOUNDARY_RADII = list(range(380, 40, -26))  # 13 rings, last ~54 px
 
 # Chaos kick
 CHAOS_GAP_THRESHOLD = 0.35        # radians (~20°)
@@ -104,6 +104,16 @@ class Boundary:
         dist = (ball.pos - pygame.Vector2(CENTER)).length()
         return dist < self.current_radius
 
+    def angle_in_gap(self, theta: float) -> bool:
+        """Return True if angle theta is within the current gap."""
+        gap_start = angle_normalize(self.gap_centre_angle - self.gap_size / 2)
+        gap_end = angle_normalize(self.gap_centre_angle + self.gap_size / 2)
+        if gap_start < gap_end:
+            return gap_start <= theta <= gap_end
+        else:
+            # Wraps around 2pi
+            return theta >= gap_start or theta <= gap_end
+
     def draw(self, surface: pygame.Surface):
         if self.escaped:
             color = ESCAPED_COLOR
@@ -122,13 +132,10 @@ class Boundary:
         rect = pygame.Rect(0, 0, r*2, r*2)
         rect.center = CENTER
 
-        # Two arcs: [gap_end, gap_start + 2pi)
         arcs = []
         if gap_end < gap_start:
-            # Gap wraps around
             arcs.append((gap_end, gap_start))
         else:
-            # Two arc segments: [0, gap_start) and (gap_end, 2pi)
             arcs.append((0, gap_start))
             arcs.append((gap_end, 2 * math.pi))
 
@@ -149,18 +156,8 @@ class Boundary:
             return False  # Ball is exactly at centre, ignore
         wall_r = self.current_radius - self.thickness / 2
         if dist + ball.radius >= wall_r:
-            # Check if not in the gap
             theta = angle_normalize(math.atan2(v.y, v.x))
-            gap_start = angle_normalize(self.gap_centre_angle - self.gap_size / 2)
-            gap_end = angle_normalize(self.gap_centre_angle + self.gap_size / 2)
-            # Check if theta is within gap
-            in_gap = False
-            if gap_start < gap_end:
-                in_gap = (gap_start <= theta <= gap_end)
-            else:
-                # Gap wraps around 2pi
-                in_gap = (theta >= gap_start or theta <= gap_end)
-            if not in_gap:
+            if not self.angle_in_gap(theta):
                 return True
         return False
 
@@ -169,22 +166,21 @@ class Boundary:
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length()
         if dist == 0:
-            # Random outward direction to avoid divide by zero
             normal = pygame.Vector2(1, 0)
         else:
             normal = v.normalize()
         rel_vel = ball.vel
         # Project velocity onto normal
         vel_norm = rel_vel.dot(normal)
-        if vel_norm > 0:
-            # Ball moving outward, skip
+        # We want to handle only if ball is moving outward (vel_norm > 0)
+        if vel_norm <= 0:
+            # Ball moving inward or tangent, skip
             return
 
-        # Reflect and add wall speed
+        # Reflect and add wall speed, then multiply by restitution
         wall_speed = -self.shrink_rate  # wall moving inward
-        ball.vel = (
-            ball.vel - 2 * vel_norm * normal
-        ) * RESTITUTION + wall_speed * normal * 0.75
+        new_vel = (ball.vel - 2 * vel_norm * normal) + wall_speed * normal * 0.75
+        ball.vel = new_vel * RESTITUTION
 
         # Reposition ball just inside the wall
         wall_r = self.current_radius - self.thickness / 2
@@ -222,11 +218,17 @@ class Simulation:
             if not boundary.escaped and boundary.ball_hits_wall(self.ball):
                 boundary.resolve_collision(self.ball)
 
-        # Mark boundaries as escaped if ball is now outside
+        # Mark boundaries as escaped only if ball is outside and angle is within gap
         for boundary in self.boundaries:
             if not boundary.escaped:
-                dist = (self.ball.pos - pygame.Vector2(CENTER)).length()
-                if dist > boundary.current_radius:
+                v = self.ball.pos - pygame.Vector2(CENTER)
+                dist = v.length()
+                theta = angle_normalize(math.atan2(v.y, v.x))
+                # Mark escaped if ball is fully outside and angle in gap
+                if (
+                    boundary.angle_in_gap(theta)
+                    and (dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2)
+                ):
                     boundary.mark_escaped()
 
         # Check for freedom
