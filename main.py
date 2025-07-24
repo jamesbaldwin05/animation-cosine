@@ -18,12 +18,14 @@ BALL_RADIUS = 12
 BALL_MASS = 1
 
 # Boundary parameters
-BOUNDARY_THICKNESS = 8            # px
-SHRINK_RATE = 60.0                # px/sec
+INITIAL_RINGS = 150
+BOUNDARY_THICKNESS = 6            # px
+SHRINK_RATE = 25.0                # px/sec
+BOUNDARY_SPACING = 12             # px between ring radii
 GAP_CLOSING_RATE = 0.35           # radians/sec
 MIN_GAP_SIZE = 0.17               # radians (~10°)
 GAP_ROTATION_RATE = 0.3           # radians/sec
-BOUNDARY_RADII = list(range(400, 20, -12))  # 32 rings, last ~32 px
+BOUNDARY_RADII = [450 - i*BOUNDARY_SPACING for i in range(INITIAL_RINGS)]
 
 # Chaos kick
 CHAOS_GAP_THRESHOLD = 0.35        # radians (~20°)
@@ -202,8 +204,28 @@ class Simulation:
         self.in_freedom = False
         self.chaos_timer = 0.0
 
+        self.total_escaped = 0
+        self.spawn_counter = 0
+        self.outside = False
+        self.ball_free_velocity = None  # Used in freedom state
+
+    def spawn_new_boundaries(self, count: int):
+        outer = max((b.current_radius for b in self.boundaries if not b.escaped), default=450)
+        for i in range(count):
+            new_r = outer + (i + 1) * BOUNDARY_SPACING
+            self.boundaries.append(Boundary(new_r))
+
     def update(self, dt: float):
+        if self.outside:
+            return
+
         if self.in_freedom:
+            # Ball moves in straight line with stored velocity; no gravity, no friction
+            self.ball.pos += self.ball_free_velocity * dt
+            # Check exit window
+            if (self.ball.pos.x < -BALL_RADIUS or self.ball.pos.x > WIDTH + BALL_RADIUS or
+                self.ball.pos.y < -BALL_RADIUS or self.ball.pos.y > HEIGHT + BALL_RADIUS):
+                self.outside = True
             return
 
         # Update boundaries
@@ -218,22 +240,25 @@ class Simulation:
             if not boundary.escaped and boundary.ball_hits_wall(self.ball):
                 boundary.resolve_collision(self.ball)
 
-        # Mark boundaries as escaped only if ball is outside and angle is within gap
+        # Mark boundaries as escaped if ball is now fully outside (distance-based only, not angle)
+        escaped_this_frame = 0
         for boundary in self.boundaries:
             if not boundary.escaped:
-                v = self.ball.pos - pygame.Vector2(CENTER)
-                dist = v.length()
-                theta = angle_normalize(math.atan2(v.y, v.x))
-                # Mark escaped if ball is fully outside and angle in gap
-                if (
-                    boundary.angle_in_gap(theta)
-                    and (dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2)
-                ):
+                dist = (self.ball.pos - pygame.Vector2(CENTER)).length()
+                if dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2:
                     boundary.mark_escaped()
+                    escaped_this_frame += 1
 
-        # Check for freedom
-        if all(b.escaped for b in self.boundaries):
+        if escaped_this_frame > 0:
+            self.total_escaped += escaped_this_frame
+            while self.total_escaped - self.spawn_counter >= 3:
+                self.spawn_counter += 3
+                self.spawn_new_boundaries(2)
+
+        # Freedom state: if all boundaries are escaped
+        if not self.in_freedom and len([b for b in self.boundaries if not b.escaped]) == 0:
             self.in_freedom = True
+            self.ball_free_velocity = self.ball.vel.copy()
 
         # Apply chaos kick if gap is small and ball is still inside
         for boundary in self.boundaries:
@@ -270,7 +295,11 @@ class Simulation:
         txt = self.font.render(f"Boundaries Left: {remaining}", True, TEXT_COLOR)
         self.screen.blit(txt, (16, 14))
 
-        if self.in_freedom:
+        if self.outside:
+            t = self.font_big.render("Escaped the Map!", True, (255, 240, 100))
+            rect = t.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 20))
+            self.screen.blit(t, rect)
+        elif self.in_freedom:
             t = self.font_big.render("Freedom!", True, (255, 240, 100))
             rect = t.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 20))
             self.screen.blit(t, rect)
