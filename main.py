@@ -12,8 +12,8 @@ TITLE = "Ball Trying to Escape the Circles"
 
 SPEED_MULT = 1.5
 
-GRAVITY = pygame.Vector2(0, int(350 * SPEED_MULT))  # 525 px/sec², downward
-LINEAR_FRICTION = 0.999           # per frame
+GRAVITY = pygame.Vector2(0, int(200 * SPEED_MULT))  # gentler gravity ≈300 px/sec²
+LINEAR_FRICTION = 0.9995           # slightly less damping
 RESTITUTION = 0.95                # bounciness for collisions
 
 BALL_RADIUS = 12
@@ -31,8 +31,7 @@ GAP_ROTATION_RATE = 0.3           # radians/sec
 BOUNDARY_RADII = [450 - i*BOUNDARY_SPACING for i in range(INITIAL_RINGS)]
 
 # Chaos kick
-CHAOS_GAP_THRESHOLD = 0.7         # radians (~40°)
-CHAOS_CHANCE_PER_SEC = 0.8        # chance per second when gap is small
+
 
 # Colors
 BG_COLOR = (28, 28, 28)
@@ -94,6 +93,7 @@ class Boundary:
         self.gap_centre_angle: float = random.uniform(0, 2 * math.pi)
         self.gap_rotation_rate: float = GAP_ROTATION_RATE * random.choice([-1, 1])
         self.thickness: int = BOUNDARY_THICKNESS
+        self.burst_given: bool = False
 
     def update(self, dt: float):
         self.current_radius -= self.shrink_rate * dt
@@ -135,37 +135,36 @@ class Boundary:
             pygame.draw.arc(surface, color, rect, start, end, thickness)
 
     def ball_hits_wall(self, ball: Ball) -> bool:
-        """
-        Only register collision if ball overlaps the radial band of the ring,
-        and is not within the gap.
-        """
-        inner = self.current_radius - self.thickness / 2
-        outer = self.current_radius + self.thickness / 2
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length()
+        inner = self.current_radius - self.thickness / 2
+        outer = self.current_radius + self.thickness / 2
         if dist + ball.radius < inner or dist - ball.radius > outer:
-            return False  # not overlapping radial band
+            return False
         theta = angle_normalize(math.atan2(v.y, v.x))
-        return not self.angle_in_gap(theta)
+        if self.angle_in_gap(theta):
+            return False
+        normal = v / (dist or 1)
+        vel_norm = ball.vel.dot(normal)
+        if dist >= self.current_radius and vel_norm >= 0:  # ball outside moving away
+            return False
+        if dist < self.current_radius and vel_norm <= 0:   # ball inside moving inward
+            return False
+        return True
 
     def resolve_collision(self, ball: Ball):
-        """
-        Always reflect the ball's velocity about the radial normal,
-        using restitution, and reposition just inside/outside the band.
-        """
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length() or 1.0
         normal = v / dist
         vel_norm = ball.vel.dot(normal)
-        ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal  # reflect with restitution
-
-        # Radial limits
+        ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal
+        # reposition just outside the collision band
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
-        if dist < self.current_radius:  # ball was inside ring, place just inside inner wall
-            target = inner - ball.radius - 0.5
-        else:                           # ball outside ring, place just outside outer wall
+        if dist >= self.current_radius:
             target = outer + ball.radius + 0.5
+        else:
+            target = inner - ball.radius - 0.5
         ball.pos = pygame.Vector2(CENTER) + normal * target
 
 class Shard:
@@ -256,6 +255,17 @@ class Simulation:
         for boundary in self.boundaries:
             boundary.update(dt)
 
+        # Sudden speed burst if innermost ring nearly closes and not yet burst
+        innermost = None
+        min_radius = float('inf')
+        for boundary in self.boundaries:
+            if boundary.ball_is_inside(self.ball) and boundary.current_radius < min_radius:
+                innermost = boundary
+                min_radius = boundary.current_radius
+        if innermost and innermost.gap_size < 0.55 and not innermost.burst_given:
+            self.ball.vel *= 3.0
+            innermost.burst_given = True
+
         # Update ball physics
         self.ball.update(dt)
 
@@ -287,21 +297,6 @@ class Simulation:
         if not self.in_freedom and len(self.boundaries) == 0:
             self.in_freedom = True
             self.ball_free_velocity = self.ball.vel.copy()
-
-        # Apply chaos kick if gap is small and ball is still inside
-        for boundary in self.boundaries:
-            if boundary.gap_size < CHAOS_GAP_THRESHOLD and boundary.ball_is_inside(self.ball):
-                self.chaos_timer += dt
-                prob = 1 - math.exp(-CHAOS_CHANCE_PER_SEC * self.chaos_timer)
-                if random.random() < prob:
-                    angle = random.uniform(0, 2 * math.pi)
-                    mag = random.uniform(80, 140) * SPEED_MULT
-                    chaos = pygame.Vector2(math.cos(angle), math.sin(angle)) * mag
-                    self.ball.vel += chaos
-                    self.chaos_timer = 0.0
-                break
-        else:
-            self.chaos_timer = 0.0
 
     def draw(self):
         self.screen.fill(BG_COLOR)
