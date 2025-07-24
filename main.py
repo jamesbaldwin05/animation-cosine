@@ -10,7 +10,9 @@ CENTER = (WIDTH // 2, HEIGHT // 2)
 FPS = 60
 TITLE = "Ball Trying to Escape the Circles"
 
-GRAVITY = pygame.Vector2(0, 350)  # px/sec², downward
+SPEED_MULT = 1.5
+
+GRAVITY = pygame.Vector2(0, int(350 * SPEED_MULT))  # 525 px/sec², downward
 LINEAR_FRICTION = 0.999           # per frame
 RESTITUTION = 0.95                # bounciness for collisions
 
@@ -65,8 +67,8 @@ class Ball:
         jitter_x = random.uniform(-32, 32)
         jitter_y = random.uniform(-32, 32)
         self.pos = pygame.Vector2(CENTER[0] + jitter_x, CENTER[1] - 100 + jitter_y)
-        vx = random.uniform(-50, 50)
-        vy = random.uniform(-20, 20)
+        vx = random.uniform(-50, 50) * SPEED_MULT
+        vy = random.uniform(-20, 20) * SPEED_MULT
         self.vel = pygame.Vector2(vx, vy)
         self.radius = BALL_RADIUS
         self.mass = BALL_MASS
@@ -293,7 +295,7 @@ class Simulation:
                 prob = 1 - math.exp(-CHAOS_CHANCE_PER_SEC * self.chaos_timer)
                 if random.random() < prob:
                     angle = random.uniform(0, 2 * math.pi)
-                    mag = random.uniform(80, 140)
+                    mag = random.uniform(80, 140) * SPEED_MULT
                     chaos = pygame.Vector2(math.cos(angle), math.sin(angle)) * mag
                     self.ball.vel += chaos
                     self.chaos_timer = 0.0
