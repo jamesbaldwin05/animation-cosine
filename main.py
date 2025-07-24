@@ -135,38 +135,38 @@ class Boundary:
             pygame.draw.arc(surface, color, rect, start, end, thickness)
 
     def ball_hits_wall(self, ball: Ball) -> bool:
-        """Check if ball hits wall (not in gap)"""
+        """
+        Only register collision if ball overlaps the radial band of the ring,
+        and is not within the gap.
+        """
+        inner = self.current_radius - self.thickness / 2
+        outer = self.current_radius + self.thickness / 2
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length()
-        if dist == 0:
-            return False  # Ball is exactly at centre, ignore
-        wall_r = self.current_radius - self.thickness / 2
-        if dist + ball.radius >= wall_r:
-            theta = angle_normalize(math.atan2(v.y, v.x))
-            if not self.angle_in_gap(theta):
-                return True
-        return False
+        if dist + ball.radius < inner or dist - ball.radius > outer:
+            return False  # not overlapping radial band
+        theta = angle_normalize(math.atan2(v.y, v.x))
+        return not self.angle_in_gap(theta)
 
     def resolve_collision(self, ball: Ball):
-        """Reflect velocity, add wall shrink speed, and reposition ball just inside boundary."""
+        """
+        Always reflect the ball's velocity about the radial normal,
+        using restitution, and reposition just inside/outside the band.
+        """
         v = ball.pos - pygame.Vector2(CENTER)
-        dist = v.length()
-        if dist == 0:
-            normal = pygame.Vector2(1, 0)
-        else:
-            normal = v.normalize()
-        rel_vel = ball.vel
-        vel_norm = rel_vel.dot(normal)
-        if vel_norm <= 0:
-            return
-        wall_speed = -self.shrink_rate
-        new_vel = (ball.vel - 2 * vel_norm * normal) + wall_speed * normal * 0.75
-        ball.vel = new_vel * RESTITUTION
-        wall_r = self.current_radius - self.thickness / 2
-        overlap = (dist + ball.radius) - wall_r
-        pushback = overlap + 1.5
-        if pushback > 0:
-            ball.pos -= normal * pushback
+        dist = v.length() or 1.0
+        normal = v / dist
+        vel_norm = ball.vel.dot(normal)
+        ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal  # reflect with restitution
+
+        # Radial limits
+        inner = self.current_radius - self.thickness / 2
+        outer = self.current_radius + self.thickness / 2
+        if dist < self.current_radius:  # ball was inside ring, place just inside inner wall
+            target = inner - ball.radius - 0.5
+        else:                           # ball outside ring, place just outside outer wall
+            target = outer + ball.radius + 0.5
+        ball.pos = pygame.Vector2(CENTER) + normal * target
 
 class Shard:
     """A short-lived line segment, used for ring shatter effect."""
