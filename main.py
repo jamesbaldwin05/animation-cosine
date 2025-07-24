@@ -7,6 +7,7 @@ from typing import List
 # --- Constants ---
 WIDTH, HEIGHT = 800, 800
 CENTER = (WIDTH // 2, HEIGHT // 2)
+CENTER_VEC = pygame.Vector2(CENTER)
 FPS = 60
 TITLE = "Ball Trying to Escape the Circles"
 
@@ -57,6 +58,11 @@ def angle_diff(a: float, b: float) -> float:
     """Smallest difference between two angles"""
     d = (a - b + math.pi) % (2 * math.pi) - math.pi
     return d
+
+# angular distance helper
+def angle_delta(a: float, b: float) -> float:
+    """Smallest signed difference a-b in radians in (-pi, pi]."""
+    return (a - b + math.pi) % (2 * math.pi) - math.pi
 
 # --- Classes ---
 
@@ -114,6 +120,10 @@ class Boundary:
             # Wraps around 2pi
             return theta >= gap_start or theta <= gap_end
 
+    def in_gap_with_margin(self, theta: float, extra: float = 0.0) -> bool:
+        diff = abs(angle_delta(theta, self.gap_centre_angle))
+        return diff <= (self.gap_size / 2 + extra)
+
     def draw(self, surface: pygame.Surface):
         # Draw arc segments directly (no extra surface)
         color = BOUNDARY_COLOR
@@ -139,25 +149,24 @@ class Boundary:
         dist = v.length()
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
-        # Only if ball circle overlaps ring thickness
+        # radial overlap check
         if dist + ball.radius < inner or dist - ball.radius > outer:
             return False
-        # Ignore gap
+        # widen gap by angle that ball spans relative to center
+        margin = math.asin(min(1.0, ball.radius / max(dist, 1.0)))
         theta = angle_normalize(math.atan2(v.y, v.x))
-        return not self.angle_in_gap(theta)
+        return not self.in_gap_with_margin(theta, margin)
 
     def resolve_collision(self, ball: Ball):
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length() or 1.0
         normal = v / dist
         vel_norm = ball.vel.dot(normal)
-        # Reflect regardless of in/out, but only flip component along normal
         ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal
 
-        # Push ball just outside ring thickness with margin so it won’t re-clip next frame
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
-        margin = 1.0 + self.shrink_rate * 0.02  # small buffer
+        margin = 1.5  # fixed buffer
         if dist >= self.current_radius:
             target = outer + ball.radius + margin
         else:
@@ -275,8 +284,10 @@ class Simulation:
         escaped_this_frame = 0
         new_boundaries = []
         for boundary in self.boundaries:
-            dist = (self.ball.pos - pygame.Vector2(CENTER)).length()
-            if dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2:
+            dist = (self.ball.pos - CENTER_VEC).length()
+            theta = angle_normalize(math.atan2((self.ball.pos-CENTER_VEC).y, (self.ball.pos-CENTER_VEC).x))
+            margin = math.asin(min(1.0, BALL_RADIUS / max(dist,1)))
+            if dist - BALL_RADIUS > boundary.current_radius + boundary.thickness/2 and boundary.in_gap_with_margin(theta, margin):
                 self.spawn_shards(boundary)
                 escaped_this_frame += 1
                 # Not added to new_boundaries: removes it
