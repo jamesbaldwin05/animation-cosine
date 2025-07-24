@@ -91,16 +91,11 @@ class Boundary:
         self.gap_centre_angle: float = random.uniform(0, 2 * math.pi)
         self.gap_rotation_rate: float = GAP_ROTATION_RATE * random.choice([-1, 1])
         self.thickness: int = BOUNDARY_THICKNESS
-        self.escaped: bool = False
 
     def update(self, dt: float):
-        if not self.escaped:
-            self.current_radius -= self.shrink_rate * dt
-            self.gap_size = max(self.gap_size - self.gap_closing_rate * dt, MIN_GAP_SIZE)
-            self.gap_centre_angle = angle_normalize(self.gap_centre_angle + self.gap_rotation_rate * dt)
-
-    def mark_escaped(self):
-        self.escaped = True
+        self.current_radius -= self.shrink_rate * dt
+        self.gap_size = max(self.gap_size - self.gap_closing_rate * dt, MIN_GAP_SIZE)
+        self.gap_centre_angle = angle_normalize(self.gap_centre_angle + self.gap_rotation_rate * dt)
 
     def ball_is_inside(self, ball: Ball) -> bool:
         dist = (ball.pos - pygame.Vector2(CENTER)).length()
@@ -117,20 +112,13 @@ class Boundary:
             return theta >= gap_start or theta <= gap_end
 
     def draw(self, surface: pygame.Surface):
-        if self.escaped:
-            color = ESCAPED_COLOR
-            alpha = 80
-        else:
-            color = BOUNDARY_COLOR
-            alpha = 200
-
-        # Arc angles: gap is omitted, draw two arcs
+        # Draw arc segments directly (no extra surface)
+        color = BOUNDARY_COLOR
         r = self.current_radius
         thickness = self.thickness
         gap_start = angle_normalize(self.gap_centre_angle - self.gap_size / 2)
         gap_end = angle_normalize(self.gap_centre_angle + self.gap_size / 2)
 
-        # Pygame draw.arc takes rect, start_angle, stop_angle (clockwise, in radians)
         rect = pygame.Rect(0, 0, r*2, r*2)
         rect.center = CENTER
 
@@ -140,18 +128,11 @@ class Boundary:
         else:
             arcs.append((0, gap_start))
             arcs.append((gap_end, 2 * math.pi))
-
-        surf_arc = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         for start, end in arcs:
-            pygame.draw.arc(
-                surf_arc, color, rect, start, end, thickness
-            )
-        surface.blit(surf_arc, (0, 0))
+            pygame.draw.arc(surface, color, rect, start, end, thickness)
 
     def ball_hits_wall(self, ball: Ball) -> bool:
-        """Check if ball hits wall (not in gap) and not escaped"""
-        if self.escaped:
-            return False
+        """Check if ball hits wall (not in gap)"""
         v = ball.pos - pygame.Vector2(CENTER)
         dist = v.length()
         if dist == 0:
@@ -172,24 +153,52 @@ class Boundary:
         else:
             normal = v.normalize()
         rel_vel = ball.vel
-        # Project velocity onto normal
         vel_norm = rel_vel.dot(normal)
-        # We want to handle only if ball is moving outward (vel_norm > 0)
         if vel_norm <= 0:
-            # Ball moving inward or tangent, skip
             return
-
-        # Reflect and add wall speed, then multiply by restitution
-        wall_speed = -self.shrink_rate  # wall moving inward
+        wall_speed = -self.shrink_rate
         new_vel = (ball.vel - 2 * vel_norm * normal) + wall_speed * normal * 0.75
         ball.vel = new_vel * RESTITUTION
-
-        # Reposition ball just inside the wall
         wall_r = self.current_radius - self.thickness / 2
         overlap = (dist + ball.radius) - wall_r
         pushback = overlap + 1.5
         if pushback > 0:
             ball.pos -= normal * pushback
+
+class Shard:
+    """A short-lived line segment, used for ring shatter effect."""
+    def __init__(self, center: pygame.Vector2, radius: float, angle: float, thickness: float):
+        self.max_life = 0.5
+        self.life = self.max_life
+        base = center + pygame.Vector2(math.cos(angle), math.sin(angle)) * (radius - thickness/2)
+        tip = center + pygame.Vector2(math.cos(angle), math.sin(angle)) * (radius + thickness/2 + 20)
+        self.start = pygame.Vector2(base)
+        self.end = pygame.Vector2(tip)
+        spread = 80
+        v = pygame.Vector2(math.cos(angle), math.sin(angle)).rotate(random.uniform(-24, 24)) * random.uniform(30, spread)
+        self.vel = v
+        self.wiggle = random.uniform(-2, 2)
+
+    def update(self, dt: float):
+        d = self.end - self.start
+        move = self.vel * dt
+        self.start += move
+        self.end += move
+        self.life -= dt
+        # Optionally wiggle a bit for effect
+        wiggle_angle = self.wiggle * math.sin(self.life * 15)
+        if wiggle_angle != 0:
+            mid = (self.start + self.end) / 2
+            perp = pygame.Vector2(-(d.y), d.x).normalize() * wiggle_angle
+            self.start -= perp / 2
+            self.end += perp / 2
+
+    def draw(self, surface: pygame.Surface):
+        fade = max(0, min(1, self.life / self.max_life))
+        color = (255, 220, 60 + int(100 * fade), int(180*fade) + 60)
+        # pygame does not support per-line alpha, so just fade color (no alpha channel, just RGB)
+        c = (int(255*fade), int(200*fade), int(60 + 100*fade))
+        pygame.draw.line(surface, c, (int(self.start.x), int(self.start.y)), (int(self.end.x), int(self.end.y)), 2)
 
 class Simulation:
     def __init__(self):
@@ -200,6 +209,7 @@ class Simulation:
         self.font_big = pygame.font.SysFont("consolas", 52, bold=True)
         self.ball = Ball()
         self.boundaries: List[Boundary] = [Boundary(radius) for radius in BOUNDARY_RADII]
+        self.shards: List[Shard] = []
         self.running = True
         self.in_freedom = False
         self.chaos_timer = 0.0
@@ -210,19 +220,30 @@ class Simulation:
         self.ball_free_velocity = None  # Used in freedom state
 
     def spawn_new_boundaries(self, count: int):
-        outer = max((b.current_radius for b in self.boundaries if not b.escaped), default=450)
+        outer = max((b.current_radius for b in self.boundaries), default=450)
         for i in range(count):
             new_r = outer + (i + 1) * BOUNDARY_SPACING
             self.boundaries.append(Boundary(new_r))
 
+    def spawn_shards(self, boundary: Boundary):
+        # Spawn 16 evenly spaced shards
+        for i in range(16):
+            angle = 2 * math.pi * i / 16
+            self.shards.append(Shard(
+                pygame.Vector2(CENTER), boundary.current_radius, angle, boundary.thickness
+            ))
+
     def update(self, dt: float):
+        # Shards always update
+        for shard in self.shards:
+            shard.update(dt)
+        self.shards = [s for s in self.shards if s.life > 0]
+
         if self.outside:
             return
 
         if self.in_freedom:
-            # Ball moves in straight line with stored velocity; no gravity, no friction
             self.ball.pos += self.ball_free_velocity * dt
-            # Check exit window
             if (self.ball.pos.x < -BALL_RADIUS or self.ball.pos.x > WIDTH + BALL_RADIUS or
                 self.ball.pos.y < -BALL_RADIUS or self.ball.pos.y > HEIGHT + BALL_RADIUS):
                 self.outside = True
@@ -237,17 +258,21 @@ class Simulation:
 
         # Handle collisions (innermost first so ball doesn't get stuck between)
         for boundary in reversed(self.boundaries):
-            if not boundary.escaped and boundary.ball_hits_wall(self.ball):
+            if boundary.ball_hits_wall(self.ball):
                 boundary.resolve_collision(self.ball)
 
-        # Mark boundaries as escaped if ball is now fully outside (distance-based only, not angle)
+        # Mark and remove boundaries escaped this frame, spawn shards
         escaped_this_frame = 0
+        new_boundaries = []
         for boundary in self.boundaries:
-            if not boundary.escaped:
-                dist = (self.ball.pos - pygame.Vector2(CENTER)).length()
-                if dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2:
-                    boundary.mark_escaped()
-                    escaped_this_frame += 1
+            dist = (self.ball.pos - pygame.Vector2(CENTER)).length()
+            if dist - self.ball.radius > boundary.current_radius + boundary.thickness / 2:
+                self.spawn_shards(boundary)
+                escaped_this_frame += 1
+                # Not added to new_boundaries: removes it
+            else:
+                new_boundaries.append(boundary)
+        self.boundaries = new_boundaries
 
         if escaped_this_frame > 0:
             self.total_escaped += escaped_this_frame
@@ -256,15 +281,14 @@ class Simulation:
                 self.spawn_new_boundaries(2)
 
         # Freedom state: if all boundaries are escaped
-        if not self.in_freedom and len([b for b in self.boundaries if not b.escaped]) == 0:
+        if not self.in_freedom and len(self.boundaries) == 0:
             self.in_freedom = True
             self.ball_free_velocity = self.ball.vel.copy()
 
         # Apply chaos kick if gap is small and ball is still inside
         for boundary in self.boundaries:
-            if not boundary.escaped and boundary.gap_size < CHAOS_GAP_THRESHOLD and boundary.ball_is_inside(self.ball):
+            if boundary.gap_size < CHAOS_GAP_THRESHOLD and boundary.ball_is_inside(self.ball):
                 self.chaos_timer += dt
-                # Once per ~1.25s on average (if threshold is met)
                 prob = 1 - math.exp(-CHAOS_CHANCE_PER_SEC * self.chaos_timer)
                 if random.random() < prob:
                     angle = random.uniform(0, 2 * math.pi)
@@ -283,6 +307,10 @@ class Simulation:
         for boundary in self.boundaries:
             boundary.draw(self.screen)
 
+        # Draw shards overlay
+        for shard in self.shards:
+            shard.draw(self.screen)
+
         # Draw centre crosshair
         pygame.draw.line(self.screen, CENTRE_COLOR, (CENTER[0] - 9, CENTER[1]), (CENTER[0] + 9, CENTER[1]), 2)
         pygame.draw.line(self.screen, CENTRE_COLOR, (CENTER[0], CENTER[1] - 9), (CENTER[0], CENTER[1] + 9), 2)
@@ -291,7 +319,7 @@ class Simulation:
         self.ball.draw(self.screen)
 
         # Draw info text
-        remaining = sum(not b.escaped for b in self.boundaries)
+        remaining = len(self.boundaries)
         txt = self.font.render(f"Boundaries Left: {remaining}", True, TEXT_COLOR)
         self.screen.blit(txt, (16, 14))
 
