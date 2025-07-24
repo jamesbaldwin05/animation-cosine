@@ -20,15 +20,16 @@ BALL_MASS = 1
 # Boundary parameters
 INITIAL_RINGS = 150
 BOUNDARY_THICKNESS = 6            # px
-SHRINK_RATE = 25.0                # px/sec
+SHRINK_RATE = 18.0                # px/sec (slower)
 BOUNDARY_SPACING = 12             # px between ring radii
-GAP_CLOSING_RATE = 0.35           # radians/sec
-MIN_GAP_SIZE = 0.17               # radians (~10°)
+BASE_GAP_SIZE = 2.9               # radians (~166°) - new constant
+GAP_CLOSING_RATE = 0.25           # radians/sec (slower closing)
+MIN_GAP_SIZE = 0.34               # radians (~19.5°), doubled
 GAP_ROTATION_RATE = 0.3           # radians/sec
 BOUNDARY_RADII = [450 - i*BOUNDARY_SPACING for i in range(INITIAL_RINGS)]
 
 # Chaos kick
-CHAOS_GAP_THRESHOLD = 0.35        # radians (~20°)
+CHAOS_GAP_THRESHOLD = 0.7         # radians (~40°)
 CHAOS_CHANCE_PER_SEC = 0.8        # chance per second when gap is small
 
 # Colors
@@ -85,8 +86,8 @@ class Boundary:
     def __init__(self, radius: float):
         self.current_radius: float = radius
         self.shrink_rate: float = SHRINK_RATE
-        # Start gap at 1.45 rad (~83°)
-        self.gap_size: float = 1.45
+        # Start gap at BASE_GAP_SIZE
+        self.gap_size: float = BASE_GAP_SIZE
         self.gap_closing_rate: float = GAP_CLOSING_RATE
         self.gap_centre_angle: float = random.uniform(0, 2 * math.pi)
         self.gap_rotation_rate: float = GAP_ROTATION_RATE * random.choice([-1, 1])
