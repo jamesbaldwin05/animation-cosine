@@ -2,7 +2,7 @@ import pygame
 import sys
 import math
 import random
-from typing import List, Tuple
+from typing import List
 
 # --- Constants ---
 WIDTH, HEIGHT = 800, 800
@@ -34,7 +34,6 @@ BG_COLOR = (28, 28, 28)
 BALL_COLOR = (240, 240, 255)
 BOUNDARY_COLOR = (100, 180, 255)
 ESCAPED_COLOR = (180, 220, 220)
-GAP_COLOR = (28, 28, 28)
 CENTRE_COLOR = (255, 120, 120)
 TEXT_COLOR = (235, 235, 255)
 
@@ -78,7 +77,7 @@ class Ball:
         self.pos += self.vel * dt
 
     def draw(self, surface: pygame.Surface):
-        pygame.draw.circle(surface, BALL_COLOR, self.pos.elementwise(int), self.radius)
+        pygame.draw.circle(surface, BALL_COLOR, (int(self.pos.x), int(self.pos.y)), self.radius)
 
 class Boundary:
     def __init__(self, radius: float):
