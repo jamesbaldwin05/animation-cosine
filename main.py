@@ -12,6 +12,7 @@ FPS = 60
 TITLE = "Ball Trying to Escape the Circles"
 
 SPEED_MULT = 1.5
+ENABLE_SHATTER = False
 MAX_SPEED = 850
 COLLISION_PASSES = 4
 
@@ -23,7 +24,7 @@ BALL_RADIUS = 12
 BALL_MASS = 1
 
 # Boundary parameters
-INITIAL_RINGS = 150
+INITIAL_RINGS = 100
 BOUNDARY_THICKNESS = 6            # px
 SHRINK_RATE = 18.0                # px/sec (slower)
 BOUNDARY_SPACING = 12             # px between ring radii
@@ -169,10 +170,11 @@ class Boundary:
 
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
-        margin = 1.5  # fixed buffer
-        if dist >= self.current_radius:
+        margin = 1.5
+        # Decide which side to place the ball based on the direction it was moving
+        if vel_norm > 0:  # ball was moving outward
             target = outer + ball.radius + margin
-        else:
+        else:             # ball was moving inward
             target = inner - ball.radius - margin
         ball.pos = pygame.Vector2(CENTER) + normal * target
 
@@ -237,6 +239,8 @@ class Simulation:
             self.boundaries.append(Boundary(new_r))
 
     def spawn_shards(self, boundary: Boundary):
+        if not ENABLE_SHATTER:
+            return
         # Spawn 16 evenly spaced shards
         for i in range(16):
             angle = 2 * math.pi * i / 16
@@ -245,10 +249,11 @@ class Simulation:
             ))
 
     def update(self, dt: float):
-        # Shards always update
-        for shard in self.shards:
-            shard.update(dt)
-        self.shards = [s for s in self.shards if s.life > 0]
+        # Shards update only if enabled
+        if ENABLE_SHATTER:
+            for shard in self.shards:
+                shard.update(dt)
+            self.shards = [s for s in self.shards if s.life > 0]
 
         if self.outside:
             return
@@ -319,9 +324,10 @@ class Simulation:
         for boundary in self.boundaries:
             boundary.draw(self.screen)
 
-        # Draw shards overlay
-        for shard in self.shards:
-            shard.draw(self.screen)
+        # Draw shards overlay only if enabled
+        if ENABLE_SHATTER:
+            for shard in self.shards:
+                shard.draw(self.screen)
 
         # Draw centre crosshair
         pygame.draw.line(self.screen, CENTRE_COLOR, (CENTER[0] - 9, CENTER[1]), (CENTER[0] + 9, CENTER[1]), 2)
