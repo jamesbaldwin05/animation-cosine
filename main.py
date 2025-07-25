@@ -13,9 +13,9 @@ TITLE = "Ball Trying to Escape the Circles"
 
 SPEED_MULT = 1.5
 
-GRAVITY = pygame.Vector2(0, int(200 * SPEED_MULT))  # gentler gravity ≈300 px/sec²
-LINEAR_FRICTION = 0.9995           # slightly less damping
-RESTITUTION = 0.95                # bounciness for collisions
+GRAVITY = pygame.Vector2(0, 0)
+LINEAR_FRICTION = 1.0
+RESTITUTION = 1.02  # slight speed gain per bounce
 
 BALL_RADIUS = 12
 BALL_MASS = 1
@@ -79,11 +79,7 @@ class Ball:
         self.mass = BALL_MASS
 
     def update(self, dt: float):
-        # Apply gravity
-        self.vel += GRAVITY * dt
-        # Apply friction
-        self.vel *= LINEAR_FRICTION
-        # Update position
+        # Only advance position; no gravity or friction
         self.pos += self.vel * dt
 
     def draw(self, surface: pygame.Surface):
