@@ -13,7 +13,7 @@ TITLE = "Ball Trying to Escape the Circles"
 
 SPEED_MULT = 1.5
 MAX_SPEED = 850
-COLLISION_PASSES = 4
+COLLISION_PASSES = 8   # was 4
 
 GRAVITY = pygame.Vector2(0, 0)
 LINEAR_FRICTION = 1.0
@@ -293,14 +293,16 @@ class Simulation:
             if not hit:
                 break
 
-        # Mark and remove boundaries only when the ball truly crosses through the gap
+        # Mark and remove at most one boundary per frame when the ball truly crosses through the gap
         escaped_this_frame = 0
         new_boundaries = []
+        removed_this_frame = False
         for boundary in self.boundaries:
             d_curr = (self.ball.pos - CENTER_VEC).length()
             theta_curr = angle_normalize(math.atan2((self.ball.pos-CENTER_VEC).y, (self.ball.pos-CENTER_VEC).x))
             d_prev = (self.prev_ball_pos - CENTER_VEC).length()
             theta_prev = angle_normalize(math.atan2((self.prev_ball_pos-CENTER_VEC).y, (self.prev_ball_pos-CENTER_VEC).x))
+
             inner = boundary.current_radius - boundary.thickness/2
             outer = boundary.current_radius + boundary.thickness/2
             margin = math.asin(min(1.0, BALL_RADIUS / max(d_curr, 1)))
@@ -308,11 +310,14 @@ class Simulation:
             crossed = (d_prev + BALL_RADIUS <= inner and d_curr - BALL_RADIUS >= outer)
             in_gap = boundary.in_gap_with_margin(theta_prev, margin) or boundary.in_gap_with_margin(theta_curr, margin)
 
-            if crossed and in_gap:
+            if not removed_this_frame and crossed and in_gap:
+                # Shatter & remove this one ring only
                 self.spawn_shards(boundary)
                 escaped_this_frame += 1
-            else:
-                new_boundaries.append(boundary)
+                removed_this_frame = True
+                continue  # skip adding to new_boundaries
+
+            new_boundaries.append(boundary)
         self.boundaries = new_boundaries
 
         if escaped_this_frame > 0:
@@ -346,7 +351,7 @@ class Simulation:
 
         # Draw info text
         remaining = len(self.boundaries)
-        txt = self.font.render(f"Boundaries Left: {remaining}", True, TEXT_COLOR)
+        txt = self.font.render(f"Rings Left: {remaining}", True, TEXT_COLOR)
         self.screen.blit(txt, (16, 14))
 
         if self.outside:
