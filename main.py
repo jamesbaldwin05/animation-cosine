@@ -27,9 +27,9 @@ INITIAL_RINGS = 150
 BOUNDARY_THICKNESS = 6            # px
 SHRINK_RATE = 18.0                # px/sec (slower)
 BOUNDARY_SPACING = 12             # px between ring radii
-BASE_GAP_SIZE = 2.9               # radians (~166°) - new constant
+BASE_GAP_SIZE = 3.2               # radians (~183°) - enlarged gap
 GAP_CLOSING_RATE = 0.25           # radians/sec (slower closing)
-MIN_GAP_SIZE = 0.34               # radians (~19.5°), doubled
+MIN_GAP_SIZE = 0.5                # radians (~29°), enlarged
 GAP_ROTATION_RATE = 0.3           # radians/sec
 BOUNDARY_RADII = [450 - i*BOUNDARY_SPACING for i in range(INITIAL_RINGS)]
 
@@ -293,9 +293,7 @@ class Simulation:
         new_boundaries = []
         for boundary in self.boundaries:
             dist = (self.ball.pos - CENTER_VEC).length()
-            theta = angle_normalize(math.atan2((self.ball.pos-CENTER_VEC).y, (self.ball.pos-CENTER_VEC).x))
-            margin = math.asin(min(1.0, BALL_RADIUS / max(dist,1)))
-            if dist - BALL_RADIUS > boundary.current_radius + boundary.thickness/2 and boundary.in_gap_with_margin(theta, margin):
+            if dist - BALL_RADIUS > boundary.current_radius + boundary.thickness/2:
                 self.spawn_shards(boundary)
                 escaped_this_frame += 1
                 # Not added to new_boundaries: removes it
