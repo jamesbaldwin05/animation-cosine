@@ -24,7 +24,7 @@ BALL_RADIUS = 12
 BALL_MASS = 1
 
 # Boundary parameters
-INITIAL_RINGS = 100
+INITIAL_RINGS = 50
 BOUNDARY_THICKNESS = 6            # px
 SHRINK_RATE = 18.0                # px/sec (slower)
 BOUNDARY_SPACING = 12             # px between ring radii
