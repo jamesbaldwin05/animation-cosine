@@ -31,6 +31,7 @@ BASE_GAP_SIZE = 3.2               # radians (~183°) - enlarged gap
 GAP_CLOSING_RATE = 0.25           # radians/sec (slower closing)
 MIN_GAP_SIZE = 0.5                # radians (~29°), enlarged
 GAP_ROTATION_RATE = 0.3           # radians/sec
+GAP_ALIGNMENT_VARIANCE = 0.4      # radians (~23°)
 BOUNDARY_RADII = [450 - i*BOUNDARY_SPACING for i in range(INITIAL_RINGS)]
 
 # Chaos kick
@@ -92,16 +93,18 @@ class Ball:
         pygame.draw.circle(surface, BALL_COLOR, (int(self.pos.x), int(self.pos.y)), self.radius)
 
 class Boundary:
-    def __init__(self, radius: float):
+    def __init__(self, radius: float, start_angle: float = None):
         self.current_radius: float = radius
         self.shrink_rate: float = SHRINK_RATE
         # Start gap at BASE_GAP_SIZE
         self.gap_size: float = BASE_GAP_SIZE
         self.gap_closing_rate: float = GAP_CLOSING_RATE
-        self.gap_centre_angle: float = random.uniform(0, 2 * math.pi)
+        base_angle = random.uniform(0, 2 * math.pi) if start_angle is None else start_angle
+        self.gap_centre_angle: float = base_angle
         self.gap_rotation_rate: float = GAP_ROTATION_RATE * random.choice([-1, 1])
         self.thickness: int = BOUNDARY_THICKNESS
         self.burst_given: bool = False
+        self.passed: bool = False
 
     def update(self, dt: float):
         self.current_radius -= self.shrink_rate * dt
@@ -219,7 +222,11 @@ class Simulation:
         self.font = pygame.font.SysFont("consolas", 28)
         self.font_big = pygame.font.SysFont("consolas", 52, bold=True)
         self.ball = Ball()
-        self.boundaries: List[Boundary] = [Boundary(radius) for radius in BOUNDARY_RADII]
+        self.base_gap_angle = random.uniform(0, 2 * math.pi)
+        self.boundaries: List[Boundary] = [
+            Boundary(radius, self.base_gap_angle + random.uniform(-GAP_ALIGNMENT_VARIANCE, GAP_ALIGNMENT_VARIANCE))
+            for radius in BOUNDARY_RADII
+        ]
         self.shards: List[Shard] = []
         self.running = True
         self.in_freedom = False
@@ -234,7 +241,8 @@ class Simulation:
         outer = max((b.current_radius for b in self.boundaries), default=450)
         for i in range(count):
             new_r = outer + (i + 1) * BOUNDARY_SPACING
-            self.boundaries.append(Boundary(new_r))
+            angle = self.base_gap_angle + random.uniform(-GAP_ALIGNMENT_VARIANCE, GAP_ALIGNMENT_VARIANCE)
+            self.boundaries.append(Boundary(new_r, angle))
 
     def spawn_shards(self, boundary: Boundary):
         # Spawn 16 evenly spaced shards
@@ -288,15 +296,23 @@ class Simulation:
             if not hit:
                 break
 
-        # Mark and remove boundaries escaped this frame, spawn shards
+        # Mark and remove boundaries only after ball passes through the gap, then escapes
         escaped_this_frame = 0
         new_boundaries = []
         for boundary in self.boundaries:
             dist = (self.ball.pos - CENTER_VEC).length()
-            if dist - BALL_RADIUS > boundary.current_radius + boundary.thickness/2:
+            theta = angle_normalize(math.atan2((self.ball.pos-CENTER_VEC).y, (self.ball.pos-CENTER_VEC).x))
+            margin = math.asin(min(1.0, BALL_RADIUS / max(dist, 1)))
+
+            # Mark boundary as passed once the ball is in its gap at any time.
+            if not boundary.passed and boundary.in_gap_with_margin(theta, margin):
+                boundary.passed = True
+
+            outer = boundary.current_radius + boundary.thickness/2
+            if boundary.passed and dist - BALL_RADIUS > outer:
+                # Ball has cleared the ring after being in the gap – shatter & remove
                 self.spawn_shards(boundary)
                 escaped_this_frame += 1
-                # Not added to new_boundaries: removes it
             else:
                 new_boundaries.append(boundary)
         self.boundaries = new_boundaries
