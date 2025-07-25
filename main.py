@@ -12,6 +12,8 @@ FPS = 60
 TITLE = "Ball Trying to Escape the Circles"
 
 SPEED_MULT = 1.5
+MAX_SPEED = 850
+COLLISION_PASSES = 4
 
 GRAVITY = pygame.Vector2(0, 0)
 LINEAR_FRICTION = 1.0
@@ -76,9 +78,15 @@ class Ball:
         self.radius = BALL_RADIUS
         self.mass = BALL_MASS
 
+    def clamp_speed(self):
+        speed = self.vel.length()
+        if speed > MAX_SPEED:
+            self.vel = self.vel * (MAX_SPEED / speed)
+
     def update(self, dt: float):
         # Only advance position; no gravity or friction
         self.pos += self.vel * dt
+        self.clamp_speed()
 
     def draw(self, surface: pygame.Surface):
         pygame.draw.circle(surface, BALL_COLOR, (int(self.pos.x), int(self.pos.y)), self.radius)
@@ -157,6 +165,7 @@ class Boundary:
         normal = v / dist
         vel_norm = ball.vel.dot(normal)
         ball.vel = ball.vel - (1 + RESTITUTION) * vel_norm * normal
+        ball.clamp_speed()
 
         inner = self.current_radius - self.thickness / 2
         outer = self.current_radius + self.thickness / 2
@@ -269,10 +278,15 @@ class Simulation:
         # Update ball physics
         self.ball.update(dt)
 
-        # Handle collisions (innermost first so ball doesn't get stuck between)
-        for boundary in reversed(self.boundaries):
-            if boundary.ball_hits_wall(self.ball):
-                boundary.resolve_collision(self.ball)
+        # Handle collisions, possibly multiple passes to fully free ball from overlaps
+        for _ in range(COLLISION_PASSES):
+            hit = False
+            for boundary in reversed(self.boundaries):
+                if boundary.ball_hits_wall(self.ball):
+                    boundary.resolve_collision(self.ball)
+                    hit = True
+            if not hit:
+                break
 
         # Mark and remove boundaries escaped this frame, spawn shards
         escaped_this_frame = 0
