@@ -68,13 +68,11 @@ def angle_delta(a: float, b: float) -> float:
 
 class Ball:
     def __init__(self):
-        # Slight randomization for variety
-        jitter_x = random.uniform(-32, 32)
-        jitter_y = random.uniform(-32, 32)
-        self.pos = pygame.Vector2(CENTER[0] + jitter_x, CENTER[1] - 100 + jitter_y)
-        vx = random.uniform(-50, 50) * SPEED_MULT
-        vy = random.uniform(-20, 20) * SPEED_MULT
-        self.vel = pygame.Vector2(vx, vy)
+        # Spawn exactly at the centre with a healthy random velocity
+        self.pos = pygame.Vector2(CENTER)  # dead-centre
+        angle = random.uniform(0, 2*math.pi)
+        speed = random.uniform(140, 220) * SPEED_MULT  # healthy initial velocity
+        self.vel = pygame.Vector2(speed, 0).rotate_rad(angle)
         self.radius = BALL_RADIUS
         self.mass = BALL_MASS
 
